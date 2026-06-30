@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets / local config
+.env
+*.pem
+*.crt
+*.cer
+
+# Collected profiles may contain server details — keep the sample, ignore real ones.
+profile.yaml
+profile.*.yaml
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

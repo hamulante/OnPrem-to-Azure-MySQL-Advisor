@@ -1,0 +1,19 @@
+# Example source server profile for the advisor.
+# A mid-size production MySQL server being assessed for Azure migration.
+mysql_version: "8.0.36"
+cpu_cores: 4
+memory_gib: 16
+data_size_gib: 240
+peak_iops: 4500
+peak_connections: 1800
+is_production: true
+requires_ha: true
+requires_read_replica: false
+# Same-version (8.0 -> 8.0) platform-compatibility inputs:
+storage_engines:
+  - InnoDB
+  - MyISAM          # unsupported on Flexible Server -> blocker
+privileges_used:
+  - SUPER           # restricted -> warning
+params:
+  lower_case_table_names: "0"   # on-prem Linux default; unsupported (only 1/2) -> blocker
