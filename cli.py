@@ -10,6 +10,10 @@ import yaml
 
 from advisor.core import recommend
 from advisor.models import OnPremProfile, Recommendation
+from advisor.specs.compatibility import (
+    CREATABLE_TARGET_VERSIONS,
+    DEFAULT_TARGET_VERSION,
+)
 
 
 def load_profile(path: str) -> OnPremProfile:
@@ -18,11 +22,20 @@ def load_profile(path: str) -> OnPremProfile:
     return OnPremProfile(**data)
 
 
-def format_report(rec: Recommendation) -> str:
+def format_report(
+    rec: Recommendation,
+    profile: OnPremProfile | None = None,
+    target_version: str = DEFAULT_TARGET_VERSION,
+) -> str:
     lines: list[str] = []
     lines.append("=" * 60)
     lines.append("Azure Database for MySQL — Migration Sizing Report")
     lines.append("=" * 60)
+    if profile is not None:
+        lines.append(
+            f"Migration path      : MySQL {profile.mysql_version} "
+            f"\u2192 Azure Flexible Server {target_version}"
+        )
     if rec.sku is not None:
         s = rec.sku
         lines.append(f"Recommended compute : {s.name}  ({s.tier.value})")
@@ -67,16 +80,25 @@ def main(argv: list[str] | None = None) -> int:
         description="Advise on sizing & risks for migrating on-prem MySQL to Azure."
     )
     parser.add_argument("input", help="Path to a YAML profile of the source server.")
+    parser.add_argument(
+        "--target-version",
+        default=DEFAULT_TARGET_VERSION,
+        help=(
+            "Azure MySQL Flexible Server major version to migrate onto "
+            f"(creatable: {', '.join(sorted(CREATABLE_TARGET_VERSIONS))}; "
+            f"default: {DEFAULT_TARGET_VERSION})."
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text.")
     args = parser.parse_args(argv)
 
     profile = load_profile(args.input)
-    rec = recommend(profile)
+    rec = recommend(profile, target_version=args.target_version)
 
     if args.json:
         print(json.dumps(_to_dict(rec), indent=2, default=str))
     else:
-        print(format_report(rec))
+        print(format_report(rec, profile, args.target_version))
 
     return 1 if rec.blockers else 0
 

@@ -18,6 +18,13 @@ import pymysql
 import yaml
 
 from advisor.collect import QueryFn, collect_profile
+from advisor.core import recommend
+from advisor.models import OnPremProfile
+from advisor.specs.compatibility import (
+    CREATABLE_TARGET_VERSIONS,
+    DEFAULT_TARGET_VERSION,
+)
+from cli import format_report
 
 
 def make_query_fn(conn: "pymysql.connections.Connection") -> QueryFn:
@@ -40,7 +47,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=3306)
     parser.add_argument("--user", required=True)
     parser.add_argument("--ssl-ca", help="Path to a CA cert to require TLS.")
+    parser.add_argument(
+        "--cpu-cores",
+        type=int,
+        help="Source host physical CPU cores (MySQL cannot report this).",
+    )
+    parser.add_argument(
+        "--memory-gib",
+        type=float,
+        help="Source host RAM in GiB (MySQL cannot report this).",
+    )
+    parser.add_argument(
+        "--peak-iops",
+        type=int,
+        help="Observed peak IOPS from OS/storage monitoring, if known.",
+    )
     parser.add_argument("--out", help="Write YAML to this file instead of stdout.")
+    parser.add_argument(
+        "--advise",
+        action="store_true",
+        help="Also run the advisor and print the sizing report (one-command flow).",
+    )
+    parser.add_argument(
+        "--target-version",
+        default=DEFAULT_TARGET_VERSION,
+        help=(
+            "Azure MySQL Flexible Server target major version for --advise "
+            f"(creatable: {', '.join(sorted(CREATABLE_TARGET_VERSIONS))}; "
+            f"default: {DEFAULT_TARGET_VERSION})."
+        ),
+    )
     args = parser.parse_args(argv)
 
     password = os.environ.get("MYSQL_PWD") or getpass.getpass("MySQL password: ")
@@ -55,15 +91,25 @@ def main(argv: list[str] | None = None) -> int:
         ssl=ssl,
     )
     try:
-        profile = collect_profile(make_query_fn(conn))
+        profile = collect_profile(
+            make_query_fn(conn),
+            cpu_cores=args.cpu_cores,
+            memory_gib=args.memory_gib,
+            peak_iops=args.peak_iops,
+        )
     finally:
         conn.close()
 
-    header = (
-        "# Auto-collected from source MySQL (read-only).\n"
-        "# Fields left null are host/OS-level and MUST be filled in manually before\n"
-        "# running the advisor: cpu_cores, memory_gib, peak_iops.\n"
-    )
+    missing = [k for k in ("cpu_cores", "memory_gib") if profile.get(k) is None]
+    if missing:
+        header = (
+            "# Auto-collected from source MySQL (read-only).\n"
+            "# These host/OS-level fields are still null and MUST be set before advising:\n"
+            f"#   {', '.join(missing)}\n"
+            "# Either edit them here, or re-run with --cpu-cores / --memory-gib / --peak-iops.\n"
+        )
+    else:
+        header = "# Auto-collected from source MySQL (read-only). Ready for cli.py.\n"
     body = yaml.safe_dump(profile, sort_keys=False, allow_unicode=True)
     output = header + body
 
@@ -71,8 +117,21 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(output)
         print(f"Wrote {args.out}")
-    else:
+    elif not args.advise:
         sys.stdout.write(output)
+
+    if args.advise:
+        if missing:
+            sys.stderr.write(
+                "Cannot advise: host field(s) still unknown: "
+                f"{', '.join(missing)}. Provide --cpu-cores / --memory-gib.\n"
+            )
+            return 2
+        # Reuse the deterministic core; no rules are duplicated here.
+        rec = recommend(OnPremProfile(**profile), target_version=args.target_version)
+        print(format_report(rec, OnPremProfile(**profile), args.target_version))
+        return 1 if rec.blockers else 0
+
     return 0
 
 

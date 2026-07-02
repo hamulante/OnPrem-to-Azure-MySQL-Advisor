@@ -17,10 +17,14 @@ from advisor.models import (
     Tier,
 )
 from advisor.specs.compatibility import (
+    CREATABLE_TARGET_VERSIONS,
+    DEFAULT_TARGET_VERSION,
     LCTN_ALLOWED_VALUES,
     LIMITATIONS_DOC,
     RESTRICTED_PRIVILEGES,
+    RETIRED_VERSIONS,
     SERVER_PARAMETERS_DOC,
+    SUPPORTED_VERSIONS_DOC,
     UNSUPPORTED_STORAGE_ENGINES,
 )
 from advisor.specs.sku_catalog import (
@@ -36,10 +40,6 @@ DEFAULT_HEADROOM = 0.20
 # Cheaper tiers first, so ties resolve to the lower-cost option.
 _TIER_RANK = {Tier.BURSTABLE: 0, Tier.GENERAL_PURPOSE: 1, Tier.MEMORY_OPTIMIZED: 2}
 
-# TODO: verify against the official supported-versions doc —
-# https://learn.microsoft.com/azure/mysql/flexible-server/concepts-supported-versions
-_SUPPORTED_MAJOR_VERSIONS = {"5.7", "8.0"}
-
 _MIGRATION_DOC = (
     "https://learn.microsoft.com/azure/mysql/migrate/"
     "mysql-on-premises-azure-db/08-data-migration"
@@ -50,11 +50,20 @@ _TIERS_DOC = (
 )
 
 
-def recommend(profile: OnPremProfile, headroom: float = DEFAULT_HEADROOM) -> Recommendation:
-    """Produce a sizing + compatibility recommendation for a source server."""
+def recommend(
+    profile: OnPremProfile,
+    headroom: float = DEFAULT_HEADROOM,
+    target_version: str = DEFAULT_TARGET_VERSION,
+) -> Recommendation:
+    """Produce a sizing + compatibility recommendation for a source server.
+
+    `target_version` is the Azure MySQL Flexible Server major version to migrate
+    onto (e.g. "8.0" or "8.4"); it determines whether the move is an in-place
+    migration or a cross-major upgrade.
+    """
     findings: list[Finding] = []
 
-    _check_version(profile, findings)
+    _check_version(profile, target_version, findings)
     _check_storage_engines(profile, findings)
     _check_lower_case_table_names(profile, findings)
     _check_restricted_privileges(profile, findings)
@@ -77,22 +86,79 @@ def _major(version: str) -> str:
     return ".".join(version.split(".")[:2])
 
 
-def _check_version(profile: OnPremProfile, findings: list[Finding]) -> None:
-    major = _major(profile.mysql_version)
-    if major not in _SUPPORTED_MAJOR_VERSIONS:
-        supported = ", ".join(sorted(_SUPPORTED_MAJOR_VERSIONS))
+def _major_tuple(major: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in major.split("."))
+
+
+def _check_version(
+    profile: OnPremProfile, target_version: str, findings: list[Finding]
+) -> None:
+    src = _major(profile.mysql_version)
+    tgt = _major(target_version)
+
+    # 1) Is the chosen target a version you can actually create a server on?
+    if tgt not in CREATABLE_TARGET_VERSIONS:
+        if tgt in RETIRED_VERSIONS:
+            message = (
+                f"Target MySQL {tgt} is retired: new Flexible Server instances can no "
+                f"longer be created on it. Choose a creatable target "
+                f"({', '.join(sorted(CREATABLE_TARGET_VERSIONS))})."
+            )
+        else:
+            message = (
+                f"Target MySQL {target_version} is not a creatable GA version on Flexible "
+                f"Server. Choose one of {', '.join(sorted(CREATABLE_TARGET_VERSIONS))}."
+            )
         findings.append(
             Finding(
-                code="VERSION_UPGRADE_REQUIRED",
+                code="TARGET_VERSION_UNSUPPORTED",
                 severity=Severity.BLOCKER,
+                message=message,
+                source=SUPPORTED_VERSIONS_DOC,
+            )
+        )
+        return
+
+    # 2) Relate the source major to the (valid) target major.
+    src_t, tgt_t = _major_tuple(src), _major_tuple(tgt)
+    if src_t == tgt_t:
+        findings.append(
+            Finding(
+                code="VERSION_MATCH",
+                severity=Severity.INFO,
                 message=(
-                    f"Source runs MySQL {profile.mysql_version}; Flexible Server targets "
-                    f"major versions {{{supported}}}. Upgrade the source to a supported "
-                    "major version first, and run the MySQL upgrade checker to surface "
-                    "schema conflicts (reserved words, utf8mb3, ZEROFILL/display width, "
-                    "FK constraint names > 64 chars, temporal types)."
+                    f"Source and target are both MySQL {tgt} — an in-place migration. "
+                    "No major-version upgrade is required; platform compatibility checks "
+                    "still apply."
+                ),
+                source=SUPPORTED_VERSIONS_DOC,
+            )
+        )
+    elif src_t < tgt_t:
+        findings.append(
+            Finding(
+                code="MAJOR_VERSION_UPGRADE",
+                severity=Severity.WARNING,
+                message=(
+                    f"Migrating MySQL {src} \u2192 {tgt} crosses a major version. Run the "
+                    "MySQL upgrade checker on the source first; expect conflicts such as "
+                    "reserved words, utf8mb3 charset, ZEROFILL/display width, foreign-key "
+                    "constraint names > 64 chars, and removed temporal types."
                 ),
                 source=_MIGRATION_DOC,
+            )
+        )
+    else:
+        findings.append(
+            Finding(
+                code="VERSION_DOWNGRADE_UNSUPPORTED",
+                severity=Severity.BLOCKER,
+                message=(
+                    f"Source MySQL {src} is newer than target {tgt}; a major-version "
+                    "downgrade is not supported. Pick a target at or above the source "
+                    "major version."
+                ),
+                source=SUPPORTED_VERSIONS_DOC,
             )
         )
 

@@ -1,4 +1,4 @@
-# MySQL Migration Advisor
+# OnPrem-to-Azure-MySQL-Advisor
 
 把**自建 / on-prem MySQL** 的规格与负载特征作为输入，输出迁移到 **Azure Database for MySQL Flexible Server** 的**选型建议**：推荐 SKU 层级、IOPS/存储估算、参数兼容性风险、迁移阻断点。
 

@@ -40,6 +40,16 @@ def test_collect_profile_leaves_host_fields_null():
     assert profile["peak_iops"] is None
 
 
+def test_collect_profile_accepts_host_field_overrides():
+    # When the caller supplies host facts on the command line, they flow through.
+    fake = make_fake({"VERSION()": [("8.0.36",)]})
+    profile = collect_profile(fake, cpu_cores=4, memory_gib=16, peak_iops=4500)
+
+    assert profile["cpu_cores"] == 4
+    assert profile["memory_gib"] == 16
+    assert profile["peak_iops"] == 4500
+
+
 def test_collect_profile_handles_empty_results():
     profile = collect_profile(lambda sql: [])
     assert profile["mysql_version"] is None

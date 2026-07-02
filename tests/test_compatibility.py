@@ -2,23 +2,23 @@ from advisor.core import recommend
 from advisor.models import OnPremProfile, Severity, Tier
 
 
-def test_unsupported_version_is_blocker():
+def test_retired_target_version_is_blocker():
+    # 5.7 is GA (Retired): you can no longer create a server on it.
     profile = OnPremProfile(
-        mysql_version="5.5.62",
+        mysql_version="5.7.44",
         cpu_cores=2,
         memory_gib=8,
         data_size_gib=50,
         is_production=True,
     )
-    rec = recommend(profile)
+    rec = recommend(profile, target_version="5.7")
     codes = {f.code for f in rec.blockers}
-    assert "VERSION_UPGRADE_REQUIRED" in codes
-    # Blocker findings must carry a source for traceability.
+    assert "TARGET_VERSION_UNSUPPORTED" in codes
     for f in rec.blockers:
         assert f.source
 
 
-def test_supported_version_has_no_version_blocker():
+def test_unknown_target_version_is_blocker():
     profile = OnPremProfile(
         mysql_version="8.0.36",
         cpu_cores=2,
@@ -26,9 +26,68 @@ def test_supported_version_has_no_version_blocker():
         data_size_gib=50,
         is_production=True,
     )
-    rec = recommend(profile)
+    rec = recommend(profile, target_version="9.5")
     codes = {f.code for f in rec.blockers}
-    assert "VERSION_UPGRADE_REQUIRED" not in codes
+    assert "TARGET_VERSION_UNSUPPORTED" in codes
+
+
+def test_same_major_is_in_place_no_blocker():
+    profile = OnPremProfile(
+        mysql_version="8.0.36",
+        cpu_cores=2,
+        memory_gib=8,
+        data_size_gib=50,
+        is_production=True,
+    )
+    rec = recommend(profile, target_version="8.0")
+    all_codes = {f.code for f in rec.findings}
+    blocker_codes = {f.code for f in rec.blockers}
+    assert "VERSION_MATCH" in all_codes
+    assert "MAJOR_VERSION_UPGRADE" not in all_codes
+    assert "VERSION_DOWNGRADE_UNSUPPORTED" not in blocker_codes
+
+
+def test_cross_major_upgrade_is_warning_not_blocker():
+    # 5.7 source -> 8.0 target is a supported but risky major upgrade.
+    profile = OnPremProfile(
+        mysql_version="5.7.44",
+        cpu_cores=2,
+        memory_gib=8,
+        data_size_gib=50,
+        is_production=True,
+    )
+    rec = recommend(profile, target_version="8.0")
+    warning_codes = {f.code for f in rec.warnings}
+    blocker_codes = {f.code for f in rec.blockers}
+    assert "MAJOR_VERSION_UPGRADE" in warning_codes
+    assert "TARGET_VERSION_UNSUPPORTED" not in blocker_codes
+
+
+def test_target_8_4_from_8_0_is_upgrade():
+    profile = OnPremProfile(
+        mysql_version="8.0.36",
+        cpu_cores=2,
+        memory_gib=8,
+        data_size_gib=50,
+        is_production=True,
+    )
+    rec = recommend(profile, target_version="8.4")
+    warning_codes = {f.code for f in rec.warnings}
+    assert "MAJOR_VERSION_UPGRADE" in warning_codes
+    assert not rec.blockers
+
+
+def test_downgrade_target_is_blocker():
+    profile = OnPremProfile(
+        mysql_version="8.4.7",
+        cpu_cores=2,
+        memory_gib=8,
+        data_size_gib=50,
+        is_production=True,
+    )
+    rec = recommend(profile, target_version="8.0")
+    codes = {f.code for f in rec.blockers}
+    assert "VERSION_DOWNGRADE_UNSUPPORTED" in codes
 
 
 def test_ha_requirement_excludes_burstable():
@@ -47,7 +106,7 @@ def test_ha_requirement_excludes_burstable():
 
 def test_every_finding_has_source():
     profile = OnPremProfile(
-        mysql_version="5.6.0",
+        mysql_version="5.7.44",
         cpu_cores=2,
         memory_gib=8,
         data_size_gib=50,

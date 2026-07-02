@@ -12,6 +12,22 @@ LIMITATIONS_DOC = (
 SERVER_PARAMETERS_DOC = (
     "https://learn.microsoft.com/azure/mysql/flexible-server/concepts-server-parameters"
 )
+SUPPORTED_VERSIONS_DOC = (
+    "https://learn.microsoft.com/azure/mysql/flexible-server/concepts-supported-versions"
+)
+
+# Major versions you can CREATE a new Flexible Server on — i.e. valid migration
+# targets. concepts-supported-versions (ms.date 2026-05-13):
+#   5.7  -> GA (Retired): new servers can no longer be created.
+#   8.0  -> GA (current minor 8.0.44)
+#   8.4  -> GA (current minor 8.4.7)
+#   9.5  -> Innovation preview: no HA / replica / backup, 30-day lifecycle; not a
+#           production migration target.
+CREATABLE_TARGET_VERSIONS = {"8.0", "8.4"}
+# Retired majors that still run but cannot be created fresh (so not a target).
+RETIRED_VERSIONS = {"5.7"}
+# Sensible default target when the caller does not specify one.
+DEFAULT_TARGET_VERSION = "8.0"
 
 # Storage engines — concepts-limitations (updated 2025-11-10).
 SUPPORTED_STORAGE_ENGINES = {"INNODB", "MEMORY"}

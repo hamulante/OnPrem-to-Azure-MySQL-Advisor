@@ -37,8 +37,17 @@ def _status_value(query: QueryFn, name: str) -> Any:
     return rows[0][1]
 
 
-def collect_profile(query: QueryFn) -> dict:
-    """Assemble a YAML-serializable profile dict from read-only queries."""
+def collect_profile(
+    query: QueryFn,
+    cpu_cores: int | None = None,
+    memory_gib: float | None = None,
+    peak_iops: int | None = None,
+) -> dict:
+    """Assemble a YAML-serializable profile dict from read-only queries.
+
+    Host-level fields (cpu_cores, memory_gib, peak_iops) cannot be observed via
+    a MySQL connection; pass them in if known, otherwise they stay None.
+    """
     version = _scalar(query, "SELECT VERSION()")
     lctn = _scalar(query, "SELECT @@lower_case_table_names")
     data_gib = _scalar(
@@ -55,12 +64,12 @@ def collect_profile(query: QueryFn) -> dict:
 
     return {
         "mysql_version": str(version) if version is not None else None,
-        # Host-level — MySQL cannot report these; fill in manually.
-        "cpu_cores": None,
-        "memory_gib": None,
+        # Host-level — MySQL cannot report these; supplied by the caller if known.
+        "cpu_cores": cpu_cores,
+        "memory_gib": memory_gib,
         "data_size_gib": float(data_gib) if data_gib is not None else 0.0,
-        # OS / storage-level — not available via SQL.
-        "peak_iops": None,
+        # OS / storage-level — not available via SQL; supplied by the caller if known.
+        "peak_iops": peak_iops,
         "peak_connections": int(max_used_conn) if max_used_conn is not None else None,
         "storage_engines": engines,
         "params": {"lower_case_table_names": str(lctn)} if lctn is not None else {},
