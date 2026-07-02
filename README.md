@@ -1,5 +1,7 @@
 # OnPrem-to-Azure-MySQL-Advisor
 
+[![CI](https://github.com/hamulante/OnPrem-to-Azure-MySQL-Advisor/actions/workflows/ci.yml/badge.svg)](https://github.com/hamulante/OnPrem-to-Azure-MySQL-Advisor/actions/workflows/ci.yml)
+
 A **pre-decision sizing & risk advisor** for migrating self-managed / on-prem MySQL to
 **Azure Database for MySQL Flexible Server**.
 
@@ -15,7 +17,7 @@ blockers — **before** you commit to the migration.
 
 ## Background
 
-This is Beibei Hu and I am currenly a support engineer for **Azure Database for MySQL and PostgreSQL** at Microsoft. A recurring pattern I see with
+This is Beibei Hu and I am currently a support engineer for **Azure Database for MySQL and PostgreSQL** at Microsoft. A recurring pattern I see with
 customers planning to move self-managed / on-prem MySQL onto Flexible Server is that the
 official docs explain *how* to move the data very well — but the questions that actually
 decide whether the migration goes smoothly are answered too late:
